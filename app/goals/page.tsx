@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Row from '@/components/Row';
 import { todayISO } from '@/lib/date';
 import type { Goal, PhaseDefinition } from '@/lib/types';
 
@@ -89,16 +90,19 @@ export default function GoalsPage() {
   }
 
   return (
-    <main>
+    <main className="narrow">
       <h1>目标设置</h1>
-      <p className="subtitle">设定一个 sprint 周期，并把它拆成几个阶段。</p>
+      <p className="subtitle">Sprint & phase definitions</p>
 
       {error && <p className="status error">{error}</p>}
 
       <form className="card" onSubmit={submit}>
-        <h2>新建 Sprint</h2>
+        <div className="sec-head">
+          <h2>新建 Sprint</h2>
+        </div>
         <p className="hint">先定起止日期，再往下加阶段。</p>
 
+        <div className="fields">
         <div className="grid">
           <div className="field">
             <label htmlFor="start">开始日期</label>
@@ -121,20 +125,11 @@ export default function GoalsPage() {
             />
           </div>
         </div>
+        </div>
 
-        <p className="meta" style={{ marginTop: 8 }}>
-          阶段定义
-        </p>
+        <p className="sub-head">阶段定义</p>
         {phases.map((phase, i) => (
-          <div
-            key={i}
-            style={{
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              padding: 12,
-              marginBottom: 10,
-            }}
-          >
+          <div key={i} className="phase-box">
             <div className="grid">
               <div className="field">
                 <label>阶段名称</label>
@@ -183,22 +178,24 @@ export default function GoalsPage() {
           </div>
         ))}
 
-        <div className="row">
+        <div className="actions">
           <button
             type="button"
-            className="secondary small"
+            className="secondary"
             onClick={() => setPhases((prev) => [...prev, emptyPhase()])}
           >
             + 添加阶段
           </button>
-          <button type="submit" disabled={saving}>
+          <button className="primary" type="submit" disabled={saving}>
             {saving ? '保存中…' : '保存 Sprint'}
           </button>
         </div>
       </form>
 
       <div className="card">
-        <h2>已有 Sprint</h2>
+        <div className="sec-head">
+          <h2>已有 Sprint</h2>
+        </div>
         {loading ? (
           <p className="status">加载中…</p>
         ) : goals.length === 0 ? (
@@ -207,27 +204,29 @@ export default function GoalsPage() {
           <ul className="list">
             {goals.map((goal) => (
               <li key={goal.id}>
-                <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <strong>
+                <div className="entry-head">
+                  <span className="entry-date">
                     {goal.sprint_start_date} → {goal.sprint_end_date}
-                  </strong>
+                  </span>
+                </div>
+                {goal.phase_definitions?.length ? (
+                  goal.phase_definitions.map((p, i) => (
+                    <div key={i} className="phase-entry">
+                      <Row
+                        label={p.name || `阶段 ${i + 1}`}
+                        value={`${p.start_date} → ${p.end_date}`}
+                      />
+                      <p className="entry-note">{p.goal}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="empty">没有阶段定义</p>
+                )}
+                <div className="row entry-actions">
                   <button type="button" className="danger small" onClick={() => remove(goal.id)}>
                     删除
                   </button>
                 </div>
-                {goal.phase_definitions?.length ? (
-                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }} className="meta">
-                    {goal.phase_definitions.map((p, i) => (
-                      <li key={i}>
-                        {p.name || `阶段 ${i + 1}`} ({p.start_date} → {p.end_date}): {p.goal}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="meta" style={{ margin: '4px 0 0' }}>
-                    没有阶段定义
-                  </p>
-                )}
               </li>
             ))}
           </ul>

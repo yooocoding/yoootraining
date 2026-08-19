@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Row from '@/components/Row';
 import { weekdayLabel } from '@/lib/date';
 import type { DailyLog } from '@/lib/types';
 
@@ -23,15 +24,18 @@ export default function CalendarPage() {
   }, []);
 
   return (
-    <main>
+    <main className="narrow">
       <h1>日历</h1>
-      <p className="subtitle">
-        历史打卡记录（先用列表，之后再换成真正的日历组件）。
-      </p>
+      <p className="subtitle">Check-in history</p>
 
       {error && <p className="status error">{error}</p>}
 
       <div className="card">
+        <div className="sec-head">
+          <h2>历史记录</h2>
+        </div>
+        <p className="hint">先用列表，之后再换成真正的日历组件。</p>
+
         {loading ? (
           <p className="status">加载中…</p>
         ) : logs.length === 0 ? (
@@ -40,35 +44,50 @@ export default function CalendarPage() {
           </p>
         ) : (
           <ul className="list">
-            {logs.map((log) => (
-              <li key={log.date}>
-                <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <strong>
-                    {log.date} · {weekdayLabel(log.date)}
-                  </strong>
-                  <span>
-                    {log.training_status && <span className="tag">{log.training_status}</span>}
-                    {log.is_period && <span className="tag">生理期</span>}
-                  </span>
-                </div>
-                <p className="meta" style={{ margin: '4px 0 0' }}>
-                  {[
-                    log.weight != null ? `体重 ${log.weight}kg` : null,
-                    log.sleep_hours != null ? `睡眠 ${log.sleep_hours}h` : null,
-                    log.energy != null ? `精力 ${log.energy}/5` : null,
-                    log.felt != null ? `感受 ${log.felt}/5` : null,
-                    log.water != null ? `饮水 ${log.water}ml` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') || '（无数据）'}
-                </p>
-                {(log.morning_note || log.evening_note) && (
-                  <p className="meta" style={{ margin: '4px 0 0' }}>
-                    {[log.morning_note, log.evening_note].filter(Boolean).join(' / ')}
-                  </p>
-                )}
-              </li>
-            ))}
+            {logs.map((log) => {
+              const hasMetrics =
+                log.weight != null ||
+                log.sleep_hours != null ||
+                log.energy != null ||
+                log.felt != null ||
+                log.water != null;
+
+              return (
+                <li key={log.date}>
+                  <div className="entry-head">
+                    <span className="entry-date">
+                      {log.date} · {weekdayLabel(log.date)}
+                    </span>
+                    <span>
+                      {log.training_status && (
+                        <span className="tag stamp">{log.training_status}</span>
+                      )}
+                      {log.is_period && <span className="tag">生理期</span>}
+                    </span>
+                  </div>
+
+                  {hasMetrics ? (
+                    <>
+                      {log.weight != null && <Row label="体重" value={`${log.weight} kg`} />}
+                      {log.sleep_hours != null && (
+                        <Row label="睡眠" value={`${log.sleep_hours} h`} />
+                      )}
+                      {log.energy != null && <Row label="精力" value={`${log.energy} / 5`} />}
+                      {log.felt != null && <Row label="感受" value={`${log.felt} / 5`} />}
+                      {log.water != null && <Row label="饮水" value={`${log.water} ml`} />}
+                    </>
+                  ) : (
+                    <p className="empty">（无数据）</p>
+                  )}
+
+                  {(log.morning_note || log.evening_note) && (
+                    <p className="entry-note">
+                      {[log.morning_note, log.evening_note].filter(Boolean).join(' / ')}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

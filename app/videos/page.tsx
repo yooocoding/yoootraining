@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Row from '@/components/Row';
 import { BODY_PARTS, DIFFICULTIES, type BodyPart, type Difficulty, type Video } from '@/lib/types';
 
 type Draft = {
@@ -106,15 +107,19 @@ export default function VideosPage() {
   }
 
   return (
-    <main>
+    <main className="narrow">
       <h1>视频库</h1>
-      <p className="subtitle">管理训练视频，AI 生成计划时会从这里挑选。</p>
+      <p className="subtitle">Curated training video index</p>
 
       {error && <p className="status error">{error}</p>}
 
       <form className="card" onSubmit={submit}>
-        <h2>{editingId ? '编辑视频' : '添加视频'}</h2>
+        <div className="sec-head">
+          <h2>{editingId ? '编辑视频' : '添加视频'}</h2>
+        </div>
+        <p className="hint">AI 生成计划时只会从这个列表里挑选。</p>
 
+        <div className="fields">
         <div className="field">
           <label htmlFor="title">标题</label>
           <input
@@ -188,9 +193,10 @@ export default function VideosPage() {
             onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
           />
         </div>
+        </div>
 
-        <div className="row">
-          <button type="submit" disabled={saving}>
+        <div className="actions">
+          <button className="primary" type="submit" disabled={saving}>
             {saving ? '保存中…' : editingId ? '保存修改' : '添加'}
           </button>
           {editingId && (
@@ -202,7 +208,9 @@ export default function VideosPage() {
       </form>
 
       <div className="card">
-        <h2>全部视频 ({videos.length})</h2>
+        <div className="sec-head">
+          <h2>全部视频 ({videos.length})</h2>
+        </div>
         {loading ? (
           <p className="status">加载中…</p>
         ) : videos.length === 0 ? (
@@ -211,29 +219,20 @@ export default function VideosPage() {
           <ul className="list">
             {videos.map((video) => (
               <li key={video.id}>
-                <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <a href={video.url} target="_blank" rel="noreferrer">
-                    <strong>{video.title}</strong>
-                  </a>
-                  <span className="row">
-                    <button type="button" className="secondary small" onClick={() => startEdit(video)}>
-                      编辑
-                    </button>
-                    <button type="button" className="danger small" onClick={() => remove(video.id)}>
-                      删除
-                    </button>
-                  </span>
+                <a className="entry-title" href={video.url} target="_blank" rel="noreferrer">
+                  {video.title}
+                </a>
+                <Row label={video.body_part} value={`${video.duration_minutes} 分钟`} />
+                <Row label="难度" value={video.difficulty} />
+                {video.notes && <p className="entry-note">{video.notes}</p>}
+                <div className="row entry-actions">
+                  <button type="button" className="secondary small" onClick={() => startEdit(video)}>
+                    编辑
+                  </button>
+                  <button type="button" className="danger small" onClick={() => remove(video.id)}>
+                    删除
+                  </button>
                 </div>
-                <p style={{ margin: '6px 0 0' }}>
-                  <span className="tag">{video.body_part}</span>
-                  <span className="tag">{video.difficulty}</span>
-                  <span className="meta">{video.duration_minutes} 分钟</span>
-                </p>
-                {video.notes && (
-                  <p className="meta" style={{ margin: '4px 0 0' }}>
-                    {video.notes}
-                  </p>
-                )}
               </li>
             ))}
           </ul>

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { todayISO, weekdayLabel } from '@/lib/date';
-import { parseTrainingPlan, resolveVideos, type TrainingPlan } from '@/lib/plan';
-import { TRAINING_STATUSES, type DailyLog, type Video } from '@/lib/types';
+import Row from '@/components/Row';
+import { currentPhase, parseTrainingPlan, resolveVideos, type TrainingPlan } from '@/lib/plan';
+import { TRAINING_STATUSES, type DailyLog, type Goal, type Video } from '@/lib/types';
 
 type Saving = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -32,6 +33,7 @@ export default function TodayPage() {
 
   // AI plan
   const [library, setLibrary] = useState<Video[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(null);
   const [foodPlan, setFoodPlan] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
@@ -61,6 +63,12 @@ export default function TodayPage() {
       .then((res) => res.json())
       .then((json) => setLibrary(json.videos ?? []))
       .catch(() => setLibrary([]));
+
+    // Sprints, for the phase line in the record header.
+    fetch('/api/goals')
+      .then((res) => res.json())
+      .then((json) => setGoals(json.goals ?? []))
+      .catch(() => setGoals([]));
   }, []);
 
   useEffect(() => {
@@ -188,39 +196,64 @@ export default function TodayPage() {
   const savingLabel = (s: Saving) =>
     s === 'saving' ? '保存中…' : s === 'saved' ? '已保存 ✓' : s === 'error' ? '保存失败' : '';
 
+  // Success and failure both get the stamp colour — the only colour on the page.
+  const statusClass = (s: Saving) =>
+    s === 'saved' ? 'status ok' : s === 'error' ? 'status error' : 'status';
+
+  // The sprint covering the selected date, and the phase inside it.
+  const activeGoal =
+    goals.find((g) => g.sprint_start_date <= date && date <= g.sprint_end_date) ?? null;
+  const phase = currentPhase(activeGoal, date);
+
   return (
     <main>
       <h1>今日打卡</h1>
-      <p className="subtitle">
-        {date} · {weekdayLabel(date)}
-      </p>
+      <p className="subtitle">Daily check-in record</p>
+
+      {/* ---------- record card header ---------- */}
+      <header className="record">
+        <div className="record__row">
+          <span className="record__label">日期</span>
+          <span className="record__value">
+            {date} · {weekdayLabel(date)}
+          </span>
+        </div>
+        <div className="record__row">
+          <span className="record__label">阶段</span>
+          <span className={phase ? 'record__value' : 'record__value muted'}>
+            {phase ? `${phase.name || '当前阶段'} — ${phase.goal}` : '未设定阶段'}
+          </span>
+        </div>
+      </header>
 
       <div className="card">
-        <div className="row">
-          <label style={{ marginBottom: 0 }} htmlFor="date">
-            日期
-          </label>
-          <input
-            id="date"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            style={{ width: 'auto' }}
-          />
-          <button className="secondary small" type="button" onClick={() => setDate(todayISO())}>
-            回到今天
-          </button>
+        <div className="fields">
+          <div className="field">
+            <label htmlFor="date">选择日期</label>
+            <input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
         </div>
+        <button className="secondary" type="button" onClick={() => setDate(todayISO())}>
+          回到今天
+        </button>
       </div>
 
       {error && <p className="status error">{error}</p>}
       {loading && <p className="status">加载中…</p>}
 
+      {/*
+        Source order is morning -> plan -> evening, which is the mobile order.
+        On desktop the grid re-places the plan into the right column.
+      */}
+      <div className="today-grid">
       {/* ---------- morning ---------- */}
-      <form className="card" onSubmit={saveMorning}>
-        <h2>早晨打卡</h2>
+      <form className="card zone-morning" onSubmit={saveMorning}>
+        <div className="sec-head">
+          <h2>早晨打卡</h2>
+        </div>
         <p className="hint">起床后记录体重、睡眠和状态。</p>
 
+        <div className="fields">
         <div className="grid">
           <div className="field">
             <label htmlFor="weight">体重 (kg)</label>
@@ -275,25 +308,28 @@ export default function TodayPage() {
             placeholder="今天感觉如何？"
           />
         </div>
+        </div>
 
-        <div className="row">
-          <button type="submit" disabled={morningSaving === 'saving'}>
+        <div className="actions">
+          <button className="primary" type="submit" disabled={morningSaving === 'saving'}>
             保存早晨打卡
           </button>
-          <span className="status">{savingLabel(morningSaving)}</span>
+          <span className={statusClass(morningSaving)}>{savingLabel(morningSaving)}</span>
         </div>
       </form>
 
       {/* ---------- AI plan ---------- */}
-      <section className="card">
-        <h2>今日 AI 计划</h2>
+      <section className="card zone-plan">
+        <div className="sec-head">
+          <h2>今日 AI 计划</h2>
+        </div>
         <p className="hint">根据晨间打卡、当前阶段目标和最近状态生成。</p>
 
         {planError && <p className="status error">{planError}</p>}
 
         {trainingPlan ? (
           <>
-            <p className="meta">训练计划</p>
+            <p className="sub-head">训练计划</p>
             <pre className="plan">{trainingPlan.summary}</pre>
 
             {/*
@@ -301,17 +337,16 @@ export default function TodayPage() {
               from model-authored text.
             */}
             {resolveVideos(trainingPlan.video_ids, library).length > 0 && (
-              <ul className="list" style={{ marginBottom: 12 }}>
+              <ul className="list plan-videos">
                 {resolveVideos(trainingPlan.video_ids, library).map((video) => (
                   <li key={video.id}>
-                    <a href={video.url} target="_blank" rel="noreferrer">
-                      <strong>{video.title}</strong>
+                    <a className="entry-title" href={video.url} target="_blank" rel="noreferrer">
+                      {video.title}
                     </a>
-                    <p style={{ margin: '4px 0 0' }}>
-                      <span className="tag">{video.body_part}</span>
-                      <span className="tag">{video.difficulty}</span>
-                      <span className="meta">{video.duration_minutes} 分钟</span>
-                    </p>
+                    <Row
+                      label={`${video.body_part} / ${video.difficulty}`}
+                      value={`${video.duration_minutes} 分钟`}
+                    />
                   </li>
                 ))}
               </ul>
@@ -319,19 +354,18 @@ export default function TodayPage() {
 
             {trainingPlan.notes && <pre className="plan">{trainingPlan.notes}</pre>}
 
-            <p className="meta">饮食计划</p>
+            <p className="sub-head">饮食计划</p>
             <pre className="plan">{foodPlan || '（无）'}</pre>
           </>
         ) : (
-          <p className="empty" style={{ marginBottom: 12 }}>
-            还没有生成今日计划。
-          </p>
+          <p className="empty">还没有生成今日计划。</p>
         )}
 
-        <div className="row">
+        <div className="actions">
+          {/* Primary only while there is no plan yet — a regenerate is secondary. */}
           <button
             type="button"
-            className="secondary"
+            className={trainingPlan ? 'secondary' : 'primary'}
             onClick={generatePlan}
             disabled={planLoading || revising}
           >
@@ -340,7 +374,7 @@ export default function TodayPage() {
         </div>
 
         {trainingPlan && (
-          <form onSubmit={revisePlan} style={{ marginTop: 14 }}>
+          <form onSubmit={revisePlan} className="revise">
             <label htmlFor="revise">调整计划</label>
             <div className="row">
               <input
@@ -350,9 +384,13 @@ export default function TodayPage() {
                 onChange={(e) => setReviseMessage(e.target.value)}
                 placeholder="临时有变化？告诉我"
                 disabled={revising || planLoading}
-                style={{ flex: 1, minWidth: 180 }}
+                className="revise__input"
               />
-              <button type="submit" disabled={revising || planLoading || !reviseMessage.trim()}>
+              <button
+                type="submit"
+                className="primary compact"
+                disabled={revising || planLoading || !reviseMessage.trim()}
+              >
                 {revising ? '调整中…' : '调整'}
               </button>
             </div>
@@ -362,10 +400,13 @@ export default function TodayPage() {
       </section>
 
       {/* ---------- evening ---------- */}
-      <form className="card" onSubmit={saveEvening}>
-        <h2>晚间打卡</h2>
+      <form className="card zone-evening" onSubmit={saveEvening}>
+        <div className="sec-head">
+          <h2>晚间打卡</h2>
+        </div>
         <p className="hint">睡前记录训练完成度和一天的感受。</p>
 
+        <div className="fields">
         <div className="grid">
           <div className="field">
             <label htmlFor="training-status">训练状态</label>
@@ -415,14 +456,16 @@ export default function TodayPage() {
             placeholder="今天完成得怎么样？"
           />
         </div>
+        </div>
 
-        <div className="row">
-          <button type="submit" disabled={eveningSaving === 'saving'}>
+        <div className="actions">
+          <button className="primary" type="submit" disabled={eveningSaving === 'saving'}>
             保存晚间打卡
           </button>
-          <span className="status">{savingLabel(eveningSaving)}</span>
+          <span className={statusClass(eveningSaving)}>{savingLabel(eveningSaving)}</span>
         </div>
       </form>
+      </div>
     </main>
   );
 }
