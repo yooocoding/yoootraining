@@ -24,6 +24,9 @@ export type PlanResult =
 /** User-facing message for the degraded state. Never throws to the page. */
 export const PLAN_FAILURE_MESSAGE = '计划生成失败了，请稍后再试。';
 
+/** The check-in is already saved by the time this can fail — say so plainly. */
+export const REFLECTION_FAILURE_MESSAGE = '打卡已保存，今晚的回应没能生成。';
+
 /**
  * Read `ai_training_plan` back out of the database.
  *

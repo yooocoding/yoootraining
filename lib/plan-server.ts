@@ -1,8 +1,18 @@
 import 'server-only';
 
 import { createServerClient } from './supabase';
-import { generateDailyPlan, type AiPlanInput } from './ai';
-import { parseTrainingPlan, type DailyPlan, type PlanResult } from './plan';
+import {
+  generateDailyPlan,
+  generateEveningReflection,
+  type AiPlanInput,
+  type ReflectionResult,
+} from './ai';
+import {
+  parseTrainingPlan,
+  REFLECTION_FAILURE_MESSAGE,
+  type DailyPlan,
+  type PlanResult,
+} from './plan';
 import type { DailyLog, Goal, Video } from './types';
 
 export type PlanContext = {
@@ -55,6 +65,57 @@ export async function loadPlanContext(date: string): Promise<PlanContext> {
       ? { training_plan: training, food_plan: log?.ai_food_plan ?? '' }
       : null,
   };
+}
+
+/**
+ * Generate the end-of-day note and persist it.
+ *
+ * Deliberately leaner than loadPlanContext: no videos, no sprint, and only the
+ * last 4 days. Returns ok:false rather than throwing — the evening check-in has
+ * already been saved by the time this runs and must never be affected.
+ */
+export async function runAndSaveReflection(date: string): Promise<ReflectionResult> {
+  const supabase = createServerClient();
+
+  const [logRes, recentRes] = await Promise.all([
+    supabase.from('daily_logs').select('*').eq('date', date).maybeSingle(),
+    supabase
+      .from('daily_logs')
+      .select('*')
+      .lt('date', date)
+      .order('date', { ascending: false })
+      .limit(4),
+  ]);
+
+  const readError = logRes.error ?? recentRes.error;
+  if (readError) {
+    console.error('[reflection] failed to load context:', readError.message);
+    return { ok: false, error: REFLECTION_FAILURE_MESSAGE };
+  }
+  if (!logRes.data) {
+    console.error('[reflection] no log row for', date);
+    return { ok: false, error: REFLECTION_FAILURE_MESSAGE };
+  }
+
+  const result = await generateEveningReflection({
+    log: logRes.data,
+    recentLogs: recentRes.data ?? [],
+  });
+
+  if (!result.ok) return result;
+
+  const { error } = await supabase
+    .from('daily_logs')
+    .update({ ai_evening_reflection: result.reflection })
+    .eq('date', date);
+
+  if (error) {
+    console.error('[reflection] generated but failed to save:', error.message);
+    // Still return it — the athlete sees the note even if it won't persist.
+    return result;
+  }
+
+  return result;
 }
 
 /**

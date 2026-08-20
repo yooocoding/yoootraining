@@ -64,6 +64,7 @@ export async function POST(request: Request) {
     'evening_note',
     'ai_training_plan',
     'ai_food_plan',
+    'ai_evening_reflection',
     'is_period',
   ];
 

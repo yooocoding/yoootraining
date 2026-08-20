@@ -23,8 +23,12 @@ create table if not exists public.daily_logs (
   evening_note     text,
   ai_training_plan text,
   ai_food_plan     text,
+  ai_evening_reflection text,
   is_period        boolean not null default false
 );
+
+-- Migration for an existing database (safe to re-run):
+-- alter table public.daily_logs add column if not exists ai_evening_reflection text;
 
 -- ---------------------------------------------------------------------------
 -- 2. goals — sprint definitions

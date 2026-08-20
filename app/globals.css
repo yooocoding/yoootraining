@@ -202,6 +202,14 @@ h1 {
 
 /* --- today: two-column ---------------------------------------------------- */
 
+/*
+ * Two independent columns, NOT a shared row grid.
+ *
+ * Previously the cards were flat grid items on shared rows, so the reflection
+ * (row 3) could not start until the evening form (row 2) ended — the left
+ * column's height dictated where the right column's second card began. Each
+ * column now owns its own stacking context and starts from the top.
+ */
 .today-grid {
   display: grid;
   grid-template-columns: 45fr 55fr;
@@ -209,46 +217,72 @@ h1 {
   align-items: start;
 }
 
-/*
- * Grid items default to min-width:auto, so a track can never shrink below its
- * content's min-content width. The dotted leader is one unbreakable 130-char
- * string, which would otherwise force the plan column far past the viewport.
- */
-.today-grid > * {
+.today-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start; /* never spread children down the column */
+  align-self: start; /* never stretch to match the other column */
+  gap: 22px;
+  /*
+   * Grid/flex children default to min-width:auto, so a track can never shrink
+   * below its content's min-content width. The dotted leader is one unbreakable
+   * 130-char string, which would otherwise force the column past the viewport.
+   */
+  min-width: 0;
+}
+
+/* gap owns the rhythm inside a column — cards must not add their own */
+.today-grid .card {
+  margin-bottom: 0;
   min-width: 0;
 }
 
 /*
- * Source order is morning -> plan -> evening, which is exactly the mobile
- * order. Desktop only re-places them: the plan sits in the right column and
- * spans both rows, so the two forms stack beneath each other on the left.
+ * Below the breakpoint the wrappers dissolve (display: contents) so all four
+ * cards become direct flex children of .today-grid, and `order` restores the
+ * reading sequence: morning -> plan -> evening -> reflection.
  */
-.today-grid > .zone-morning {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.today-grid > .zone-plan {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-}
-
-.today-grid > .zone-evening {
-  grid-column: 1;
-  grid-row: 2;
-}
-
 @media (max-width: 860px) {
   .today-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    /*
+     * Must override the grid's `align-items: start`. In a column flex box that
+     * is the CROSS axis, so `start` would size each card to its own content
+     * width — and the dotted leader's unbreakable string would blow the plan
+     * card far past the viewport.
+     */
+    align-items: stretch;
   }
 
-  .today-grid > .zone-morning,
-  .today-grid > .zone-plan,
-  .today-grid > .zone-evening {
-    grid-column: 1;
-    grid-row: auto;
+  .today-col {
+    display: contents;
   }
+
+  .zone-morning {
+    order: 1;
+  }
+
+  .zone-plan {
+    order: 2;
+  }
+
+  .zone-evening {
+    order: 3;
+  }
+
+  .zone-reflection {
+    order: 4;
+  }
+}
+
+.reflection {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 /* --- forms ---------------------------------------------------------------- */

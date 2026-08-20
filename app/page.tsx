@@ -41,6 +41,11 @@ export default function TodayPage() {
   const [reviseMessage, setReviseMessage] = useState('');
   const [revising, setRevising] = useState(false);
 
+  // evening reflection
+  const [reflection, setReflection] = useState<string | null>(null);
+  const [reflectionLoading, setReflectionLoading] = useState(false);
+  const [reflectionError, setReflectionError] = useState<string | null>(null);
+
   const hydrate = useCallback((next: DailyLog | null) => {
     setLog(next);
     setWeight(next?.weight != null ? String(next.weight) : '');
@@ -54,6 +59,8 @@ export default function TodayPage() {
     setEveningNote(next?.evening_note ?? '');
     setTrainingPlan(parseTrainingPlan(next?.ai_training_plan));
     setFoodPlan(next?.ai_food_plan ?? null);
+    setReflection(next?.ai_evening_reflection ?? null);
+    setReflectionError(null);
   }, []);
 
   // The video library is the lookup table for AI-suggested video_ids. Loaded
@@ -109,9 +116,37 @@ export default function TodayPage() {
       setLog(json.log);
       setSaving('saved');
       setTimeout(() => setSaving('idle'), 2000);
+      return true;
     } catch (err) {
       setSaving('error');
       setError((err as Error).message);
+      return false;
+    }
+  }
+
+  /**
+   * Runs only after the evening check-in has already been saved, and keeps its
+   * own error state — a failure here must never look like a failed save.
+   */
+  async function requestReflection() {
+    setReflectionLoading(true);
+    setReflectionError(null);
+    try {
+      const res = await fetch('/api/daily-logs/evening-reflection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setReflection(json.reflection);
+      } else {
+        setReflectionError(json.error ?? '打卡已保存，今晚的回应没能生成。');
+      }
+    } catch {
+      setReflectionError('打卡已保存，今晚的回应没能生成。');
+    } finally {
+      setReflectionLoading(false);
     }
   }
 
@@ -131,9 +166,9 @@ export default function TodayPage() {
     );
   }
 
-  function saveEvening(e: React.FormEvent) {
+  async function saveEvening(e: React.FormEvent) {
     e.preventDefault();
-    save(
+    const saved = await save(
       {
         training_status: (trainingStatus || null) as DailyLog['training_status'],
         felt: num(felt),
@@ -142,6 +177,8 @@ export default function TodayPage() {
       },
       setEveningSaving,
     );
+    // Only after the save has landed, and never gating it.
+    if (saved) requestReflection();
   }
 
   /**
@@ -242,10 +279,13 @@ export default function TodayPage() {
       {loading && <p className="status">加载中…</p>}
 
       {/*
-        Source order is morning -> plan -> evening, which is the mobile order.
-        On desktop the grid re-places the plan into the right column.
+        Two independent columns. Left is the writing side, right the reading
+        side; each stacks from the top. Below 860px the wrappers dissolve via
+        display:contents and CSS `order` restores morning -> plan -> evening
+        -> reflection.
       */}
       <div className="today-grid">
+      <div className="today-col">
       {/* ---------- morning ---------- */}
       <form className="card zone-morning" onSubmit={saveMorning}>
         <div className="sec-head">
@@ -317,6 +357,76 @@ export default function TodayPage() {
           <span className={statusClass(morningSaving)}>{savingLabel(morningSaving)}</span>
         </div>
       </form>
+
+      {/* ---------- evening ---------- */}
+      <form className="card zone-evening" onSubmit={saveEvening}>
+        <div className="sec-head">
+          <h2>晚间打卡</h2>
+        </div>
+        <p className="hint">睡前记录训练完成度和一天的感受。</p>
+
+        <div className="fields">
+        <div className="grid">
+          <div className="field">
+            <label htmlFor="training-status">训练状态</label>
+            <select
+              id="training-status"
+              value={trainingStatus}
+              onChange={(e) => setTrainingStatus(e.target.value)}
+            >
+              <option value="">—</option>
+              {TRAINING_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="felt">身体感受 (1-5)</label>
+            <select id="felt" value={felt} onChange={(e) => setFelt(e.target.value)}>
+              <option value="">—</option>
+              {RATINGS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="water">饮水量 (ml)</label>
+            <input
+              id="water"
+              type="number"
+              step="100"
+              value={water}
+              onChange={(e) => setWater(e.target.value)}
+              placeholder="2000"
+            />
+          </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="evening-note">晚间备注</label>
+          <textarea
+            id="evening-note"
+            value={eveningNote}
+            onChange={(e) => setEveningNote(e.target.value)}
+            placeholder="今天完成得怎么样？"
+          />
+        </div>
+        </div>
+
+        <div className="actions">
+          <button className="primary" type="submit" disabled={eveningSaving === 'saving'}>
+            保存晚间打卡
+          </button>
+          <span className={statusClass(eveningSaving)}>{savingLabel(eveningSaving)}</span>
+        </div>
+      </form>
+      </div>
+
+      <div className="today-col">
 
       {/* ---------- AI plan ---------- */}
       <section className="card zone-plan">
@@ -399,72 +509,27 @@ export default function TodayPage() {
         )}
       </section>
 
-      {/* ---------- evening ---------- */}
-      <form className="card zone-evening" onSubmit={saveEvening}>
-        <div className="sec-head">
-          <h2>晚间打卡</h2>
-        </div>
-        <p className="hint">睡前记录训练完成度和一天的感受。</p>
 
-        <div className="fields">
-        <div className="grid">
-          <div className="field">
-            <label htmlFor="training-status">训练状态</label>
-            <select
-              id="training-status"
-              value={trainingStatus}
-              onChange={(e) => setTrainingStatus(e.target.value)}
-            >
-              <option value="">—</option>
-              {TRAINING_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+      {/*
+        Sits directly under the plan in the reading column, independent of how
+        tall the writing column is. On mobile CSS `order` drops it last.
+        Renders nothing until there is something to say.
+      */}
+      {(reflection || reflectionLoading || reflectionError) && (
+        <section className="card zone-reflection">
+          <div className="sec-head">
+            <h2>今晚</h2>
           </div>
-          <div className="field">
-            <label htmlFor="felt">身体感受 (1-5)</label>
-            <select id="felt" value={felt} onChange={(e) => setFelt(e.target.value)}>
-              <option value="">—</option>
-              {RATINGS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="water">饮水量 (ml)</label>
-            <input
-              id="water"
-              type="number"
-              step="100"
-              value={water}
-              onChange={(e) => setWater(e.target.value)}
-              placeholder="2000"
-            />
-          </div>
-        </div>
-
-        <div className="field">
-          <label htmlFor="evening-note">晚间备注</label>
-          <textarea
-            id="evening-note"
-            value={eveningNote}
-            onChange={(e) => setEveningNote(e.target.value)}
-            placeholder="今天完成得怎么样？"
-          />
-        </div>
-        </div>
-
-        <div className="actions">
-          <button className="primary" type="submit" disabled={eveningSaving === 'saving'}>
-            保存晚间打卡
-          </button>
-          <span className={statusClass(eveningSaving)}>{savingLabel(eveningSaving)}</span>
-        </div>
-      </form>
+          {reflectionLoading ? (
+            <p className="status">正在写…</p>
+          ) : reflectionError ? (
+            <p className="empty">{reflectionError}</p>
+          ) : (
+            <p className="reflection">{reflection}</p>
+          )}
+        </section>
+      )}
+      </div>
       </div>
     </main>
   );

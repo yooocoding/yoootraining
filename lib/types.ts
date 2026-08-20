@@ -36,6 +36,8 @@ export type DailyLog = {
   evening_note: string | null;
   ai_training_plan: string | null;
   ai_food_plan: string | null;
+  /** Short end-of-day note written after the evening check-in is saved. */
+  ai_evening_reflection: string | null;
   is_period: boolean;
 };
 
