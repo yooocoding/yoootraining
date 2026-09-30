@@ -55,38 +55,90 @@ You will be given a VIDEO LIBRARY: a JSON array of videos, each with an "id".
 - Avoid hammering the same body part on consecutive days.
 - Be concrete and brief. Write summary and notes in Chinese (简体中文), matching how the athlete writes their own notes.`;
 
+const MAX_REFLECTION_ATTEMPTS = 2;
+
+/** A finished sentence ends in terminal punctuation, optionally then a closer. */
+const ENDS_COMPLETE = /[。．.！!？?…]["'\u201d\u2019\u300d\u300f）)\u3011]*$/;
+
+/**
+ * Trailing decoration that carries no grammatical weight. The athlete writes
+ * with emoji and the model mirrors her, so a reply may legitimately end
+ * "...好好休息 \u{1F525}" — stripping these before the completeness test keeps a
+ * perfectly good reply from being mistaken for a truncated one.
+ */
+const TRAILING_DECORATION =
+  /[\s\u{FE0F}\u{200D}\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Emoji_Component}]+$/u;
+
+/** Does this read as a finished thought, ignoring trailing emoji/whitespace? */
+function isComplete(text: string): boolean {
+  return ENDS_COMPLETE.test(text.replace(TRAILING_DECORATION, ''));
+}
+
+/**
+ * Last-resort salvage: cut back to the final terminal punctuation so the
+ * athlete gets the finished sentences rather than nothing at all. Returns null
+ * if that would leave too little to be worth showing.
+ */
+function trimToLastCompleteSentence(text: string): string | null {
+  const match = text.match(/^[\s\S]*[。．.！!？?…]["'\u201d\u2019\u300d\u300f）)\u3011]*/);
+  const trimmed = match?.[0].trim();
+  // A complete Chinese sentence runs ~8-12 chars, so keep the floor low.
+  return trimmed && trimmed.length >= 8 ? trimmed : null;
+}
+
 const ReflectionSchema = z.object({
   reflection: z
     .string()
-    .describe('2-3 sentences in 简体中文. Nothing else — no heading, no list, no sign-off.'),
+    .describe('2-4 sentences in 简体中文. Nothing else — no heading, no list, no sign-off.'),
 });
 
 /**
- * The tone spec is the feature here. Read the negative constraints as hard
- * requirements, not style preferences: this note is shown on days the athlete
- * skipped everything, and it must read the same on those days as on any other.
+ * The tone spec is the feature here.
+ *
+ * The register is meant to TRACK the day, not flatten across it: warm and
+ * specific when she is proud of something, deliberately restrained when the day
+ * was hard or skipped. The restraint rules below are asymmetric on purpose —
+ * they bind on bad days, where a stray note of judgment or pressure does real
+ * damage, and loosen on good days, where holding back reads as coldness.
  */
 const REFLECTION_SYSTEM_PROMPT = `你是这位运动员的训练搭档，在她一天结束时写一句简短的话。你一直在留意她这几天的状态。
 
-用简体中文写 2-3 句话，然后停下。克制本身就是重点 —— 短而安静的一段话，永远好过面面俱到的一段话。
+用简体中文写 2-4 句话，然后停下。
 
-## 这不是什么
+## 核心原则：跟着她的情绪走
 
-这不是复盘，也不是评价。你不是在给这一天打分。
+先读今晚的记录 —— 她写了什么、完成度如何、身体感受打了几分 —— 判断今天对她来说是怎样的一天，再决定用什么语气。把同一种语气套在每一天上是错的：那不是克制，那是没在听。
 
-- 绝不因为完成训练而表扬，也绝不因为跳过训练而流露失望、担心或鼓励。无论她今天全部完成还是完全没动，你的语气必须完全一致 —— 读的人不应该能从你的语气里判断出是哪一种。
-- 如果今天跳过或只完成了一部分：平淡地带过一句，然后把注意力放到别的地方。不要建议明天补上、加量、把进度追回来、重新开始。不要暗示跳过的一天需要被弥补。
-- 不要使用任何感叹号。
-- 禁止出现：加油、太棒了、继续保持、真不错、做得好、很棒、厉害、坚持就是胜利，以及任何类似的加油打气。不提连续天数，不庆祝，不做励志式表达。
+### 今天很好：超额完成、感受分很高、或者她写下的话里带着兴奋（感叹号、"终于"、"超额完成"）
 
-## 应该写什么
+和她一起高兴。她正为自己骄傲的时候，你的保留会显得冷淡，会错过这个时刻。
 
-从下面三件事里挑一件，把它写好就够了：
+- 具体说出她做到了什么。"拉伸了 30 分钟"、"超额完成" 远远好过 "做得不错"。
+- 可以有热度，可以用感叹号。
+- 关于恢复、酸痛、别练太狠的提醒，最多一句，而且绝不能占据主要篇幅。今天的主角是她做成的那件事，不是明天的风险。
+
+### 今天很难，或者她跳过了
+
+这里才是需要克制的地方。
+
+- 平淡地承认一句，然后把注意力放到别的地方。
+- 绝不流露失望、评判或压力。不要建议明天补上、加量、把落下的追回来。不要暗示跳过的一天需要被弥补。
+- 不要在她状态低的时候硬找亮点 —— 那是另一种形式的不听。
+
+### 今天很普通
+
+像平常那样：注意到什么就说什么，平实、温和、不着急。
+
+## 热情要有来处
+
+空洞的加油打气在任何一天都是错的。"加油"、"继续保持"、"坚持就是胜利"、"你真棒" 这类和今天具体发生了什么无关的话，不要写。热度必须来自她真的做成了某件事，而不是来自你想鼓励她 —— 这是"和她一起高兴"与"给她打气"的区别。
+
+## 可以写的内容
+
+- 直接回应今天发生的事。
 - 注意到最近几天的某个规律 —— 睡眠、精力，或者她描述自己的方式。
 - 把她今晚写下的东西，和她早上描述的状态联系起来。
 - 给明天一个具体的小建议。
-
-像训练搭档在一天结束时发消息那样写：平实、留意到了、不着急。
 
 ## 硬性限制
 
@@ -149,7 +201,7 @@ function buildReflectionPrompt(input: EveningReflectionInput): string {
           2,
         )
       : '（没有更早的记录）',
-    '写下今晚的那 2-3 句话。',
+    '写下今晚的那几句话。',
   ];
 
   return sections.join('\n\n');
@@ -168,49 +220,78 @@ export async function generateEveningReflection(
   }
 
   const client = new Anthropic();
+  let lastProblem = 'unknown';
 
-  try {
-    const response = await client.messages.parse({
-      model: MODEL,
-      // The output is 2-3 sentences, but adaptive thinking draws from the same
-      // budget — and it thinks hardest on exactly the sensitive days where a
-      // truncated half-sentence would land worst. Leave real headroom.
-      max_tokens: 16000,
-      system: REFLECTION_SYSTEM_PROMPT,
-      thinking: { type: 'adaptive' },
-      output_config: {
-        format: zodOutputFormat(ReflectionSchema),
-        effort: 'medium',
-      },
-      messages: [{ role: 'user', content: buildReflectionPrompt(input) }],
-    });
+  for (let attempt = 1; attempt <= MAX_REFLECTION_ATTEMPTS; attempt++) {
+    try {
+      const response = await client.messages.parse({
+        model: MODEL,
+        // The output is a few sentences, but adaptive thinking draws from the
+        // same budget — and it thinks hardest on exactly the sensitive days
+        // where a truncated half-sentence would land worst. Leave headroom.
+        max_tokens: 16000,
+        system: REFLECTION_SYSTEM_PROMPT,
+        thinking: { type: 'adaptive' },
+        output_config: {
+          format: zodOutputFormat(ReflectionSchema),
+          effort: 'medium',
+        },
+        messages: [{ role: 'user', content: buildReflectionPrompt(input) }],
+      });
 
-    if (response.stop_reason === 'refusal') {
-      console.error('[ai] reflection refused', response.stop_details);
-      return { ok: false, error: REFLECTION_FAILURE_MESSAGE };
+      // A refusal is a decision, not a glitch — retrying just burns tokens.
+      if (response.stop_reason === 'refusal') {
+        console.error('[ai] reflection refused', response.stop_details);
+        return { ok: false, error: REFLECTION_FAILURE_MESSAGE };
+      }
+
+      if (response.stop_reason === 'max_tokens') {
+        lastProblem = 'hit max_tokens';
+        continue;
+      }
+
+      const text = response.parsed_output?.reflection?.trim();
+      if (!text) {
+        lastProblem = `no parseable output (stop_reason: ${response.stop_reason})`;
+        continue;
+      }
+
+      // Observed intermittently: stop_reason 'end_turn', valid JSON, but the
+      // prose stops mid-clause. Nothing in the API surface flags it, so check
+      // the text itself — a complete sentence always ends in terminal
+      // punctuation. Showing nothing beats showing half a thought.
+      if (!isComplete(text)) {
+        lastProblem = `incomplete final sentence: ...${text.slice(-12)}`;
+        // On the last attempt, keep the finished sentences instead of losing
+        // the whole reply to one cut-off tail.
+        if (attempt === MAX_REFLECTION_ATTEMPTS) {
+          const salvaged = trimToLastCompleteSentence(text);
+          if (salvaged) {
+            console.warn(`[ai] reflection salvaged — dropped a truncated tail`);
+            return { ok: true, reflection: salvaged };
+          }
+        }
+        continue;
+      }
+
+      return { ok: true, reflection: text };
+    } catch (error) {
+      if (error instanceof Anthropic.AuthenticationError) {
+        console.error('[ai] reflection auth failed — check ANTHROPIC_API_KEY');
+        return { ok: false, error: REFLECTION_FAILURE_MESSAGE };
+      }
+      if (error instanceof Anthropic.APIError) {
+        lastProblem = `API error ${error.status}: ${error.message}`;
+      } else {
+        lastProblem = `unexpected error: ${String(error)}`;
+      }
     }
-
-    // Better to show nothing than a sentence that stops halfway.
-    if (response.stop_reason === 'max_tokens') {
-      console.error('[ai] reflection truncated at max_tokens');
-      return { ok: false, error: REFLECTION_FAILURE_MESSAGE };
-    }
-
-    const text = response.parsed_output?.reflection?.trim();
-    if (!text) {
-      console.error('[ai] no parseable reflection', { stop_reason: response.stop_reason });
-      return { ok: false, error: REFLECTION_FAILURE_MESSAGE };
-    }
-
-    return { ok: true, reflection: text };
-  } catch (error) {
-    if (error instanceof Anthropic.APIError) {
-      console.error(`[ai] reflection API error ${error.status}:`, error.message);
-    } else {
-      console.error('[ai] reflection unexpected error:', error);
-    }
-    return { ok: false, error: REFLECTION_FAILURE_MESSAGE };
   }
+
+  console.error(
+    `[ai] reflection failed after ${MAX_REFLECTION_ATTEMPTS} attempts — ${lastProblem}`,
+  );
+  return { ok: false, error: REFLECTION_FAILURE_MESSAGE };
 }
 
 export type AiPlanInput = {
